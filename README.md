@@ -63,16 +63,3 @@ been tested in the delivery environment. Test this copy in simulation/webcam mod
 before connecting it to anything that moves. Gesture output is not a safety-rated
 control signal and hand identity can change when hands cross or leave the frame.
 
-## Start a new repository
-
-No old Git history or remote is included. After testing and reviewing files:
-
-```bash
-git init
-git add .
-git commit -m "Start hand gesture recognition project"
-git branch -M main
-```
-
-Create an empty repository on your hosting service, then use its instructions to
-add the remote and push. Keep LICENSE and CREDITS.md with redistributed copies.
