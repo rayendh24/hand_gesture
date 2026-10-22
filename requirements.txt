@@ -1,0 +1,8 @@
+# Legacy MediaPipe Solutions API; intended for Python 3.10 / 3.11.
+mediapipe==0.10.21
+numpy==1.26.4
+opencv-contrib-python==4.11.0.86
+tensorflow==2.16.2
+# Keep MediaPipe's JAX dependencies compatible with this TensorFlow generation.
+jax==0.4.30
+jaxlib==0.4.30
