@@ -1,5 +1,6 @@
 # Adapted from the supplied Apache-2.0 project; see CREDITS.md.
 # Modified 2026-10-22: inference-only cleanup, modular helpers and resource handling.
+# Modified 2026-11-23: new on-screen HUD (ui.py); recognition logic unchanged.
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 import csv
@@ -28,8 +29,10 @@ from gestures import (
     get_movement_direction
 )
 from utils import CvFpsCalc
+from ui import Hud
 
 BASE_DIR = Path(__file__).resolve().parent
+WINDOW_TITLE = 'Hand Gesture Recognition'
 from model import KeyPointClassifier
 from model import PointHistoryClassifier
 
@@ -73,8 +76,6 @@ def main():
     min_detection_confidence = args.min_detection_confidence
     min_tracking_confidence = args.min_tracking_confidence
 
-    use_brect = True
-
     # Camera preparation
     cap = cv.VideoCapture(cap_device)
     hands = None
@@ -115,6 +116,9 @@ def main():
         # FPS Measurement
         cvFpsCalc = CvFpsCalc(buffer_len=10)
 
+        # On-screen display
+        hud = Hud()
+
         # Coordinate history
         history_length = 16
         point_histories = {
@@ -144,6 +148,8 @@ def main():
             key = cv.waitKey(10)
             if key == 27:  # ESC
                 break
+            if key in (ord('h'), ord('H')):  # Show/hide panels
+                hud.toggle_panels()
 
             # Camera capture
             ret, image = cap.read()
@@ -151,6 +157,7 @@ def main():
                 break
             image = cv.flip(image, 1)  # Mirror display
             debug_image = copy.deepcopy(image)
+            hud.begin_frame()
 
             # Detection implementation
             image = cv.cvtColor(image, cv.COLOR_BGR2RGB)
@@ -216,14 +223,11 @@ def main():
                                                       debug_image.shape)
                     custom_gesture = get_custom_gesture(landmark_list)
 
-                    # Drawing part
-                    debug_image = draw_bounding_rect(use_brect, debug_image, brect)
-                    mp.solutions.drawing_utils.draw_landmarks(
-                        debug_image, hand_landmarks, mp_hands.HAND_CONNECTIONS)
-                    debug_image = draw_info_text(
-                        debug_image,
+                    # Drawing part (collected here, drawn once per frame)
+                    hud.add_hand(
+                        hand_label,
                         brect,
-                        handedness,
+                        landmark_list,
                         keypoint_classifier_labels[hand_sign_id],
                         point_history_classifier_labels[most_common_fg_id[0][0]],
                         movement_direction,
@@ -247,78 +251,18 @@ def main():
             if smiling and not smiling_reported:
                 print("SMILING command detected", flush=True)
             smiling_reported = smiling
-            for point_history in point_histories.values():
-                debug_image = draw_point_history(debug_image, point_history)
-            debug_image = draw_info(debug_image, fps, smiling)
+            for hand_label, point_history in point_histories.items():
+                hud.add_trail(hand_label, point_history)
+            debug_image = hud.render(debug_image, fps, smiling)
 
             # Screen reflection
-            cv.imshow('Hand Gesture Recognition', debug_image)
+            cv.imshow(WINDOW_TITLE, debug_image)
 
     finally:
         if hands is not None:
             hands.close()
         cap.release()
         cv.destroyAllWindows()
-
-
-def draw_bounding_rect(use_brect, image, brect):
-    if use_brect:
-        # Outer rectangle
-        cv.rectangle(image, (brect[0], brect[1]), (brect[2], brect[3]),
-                     (0, 0, 0), 1)
-
-    return image
-
-
-def draw_info_text(image, brect, handedness, hand_sign_text,
-                   finger_gesture_text, movement_direction, hand_position,
-                   custom_gesture):
-    cv.rectangle(image, (brect[0], brect[1]), (brect[2], brect[1] - 22),
-                 (0, 0, 0), -1)
-
-    info_text = handedness.classification[0].label[0:]
-    if hand_sign_text != "":
-        info_text = info_text + ':' + hand_sign_text
-    cv.putText(image, info_text, (brect[0] + 5, brect[1] - 4),
-               cv.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1, cv.LINE_AA)
-
-    details = f"{movement_direction} | {hand_position}"
-    if finger_gesture_text != "":
-        details = f"{details} | {finger_gesture_text}"
-    cv.putText(image, details, (brect[0] + 5, brect[3] + 18),
-                   cv.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 0), 4, cv.LINE_AA)
-    cv.putText(image, details, (brect[0] + 5, brect[3] + 18),
-                   cv.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2,
-                   cv.LINE_AA)
-    if custom_gesture:
-        cv.putText(image, custom_gesture, (brect[0] + 5, brect[3] + 42),
-                   cv.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 3, cv.LINE_AA)
-        cv.putText(image, custom_gesture, (brect[0] + 5, brect[3] + 42),
-                   cv.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2,
-                   cv.LINE_AA)
-
-    return image
-
-
-def draw_point_history(image, point_history):
-    for index, point in enumerate(point_history):
-        if point[0] != 0 and point[1] != 0:
-            cv.circle(image, (point[0], point[1]), 1 + int(index / 2),
-                      (152, 251, 152), 2)
-
-    return image
-
-
-def draw_info(image, fps, smiling=False):
-    cv.putText(image, "FPS:" + str(fps), (10, 30), cv.FONT_HERSHEY_SIMPLEX,
-               1.0, (0, 0, 0), 4, cv.LINE_AA)
-    cv.putText(image, "FPS:" + str(fps), (10, 30), cv.FONT_HERSHEY_SIMPLEX,
-               1.0, (255, 255, 255), 2, cv.LINE_AA)
-    if smiling:
-        cv.putText(image, "SMILING", (10, 150), cv.FONT_HERSHEY_SIMPLEX,
-                   1.0, (0, 255, 255), 2, cv.LINE_AA)
-
-    return image
 
 
 if __name__ == '__main__':
